@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 const { expect } = require('chai');
 const { ethers } = require('hardhat');
 
@@ -66,8 +67,7 @@ describe('Token', () => {
       })
 
       it('emits a Transfer event', async () => {
-        await expect(transaction).to.emit(token, 'Transfer').
-          withArgs(deployer.address, receiver.address, amount)
+        await expect(transaction).to.emit(token, 'Transfer').withArgs(deployer.address, receiver.address, amount)
       })
 
     })

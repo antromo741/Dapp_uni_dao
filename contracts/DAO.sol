@@ -27,6 +27,8 @@ contract DAO {
 
     event Vote(uint256 id, address investor);
 
+    event Finalize(uint256 id);
+
     constructor(Token _token, uint256 _quorum) {
         owner = msg.sender;
         token = _token;
@@ -36,10 +38,7 @@ contract DAO {
     receive() external payable {}
 
     modifier onlyInvestor() {
-        require(
-            token.balanceOf(msg.sender) > 0,
-            " must be token holder"
-        );
+        require(token.balanceOf(msg.sender) > 0, " must be token holder");
         _;
     }
 
@@ -66,7 +65,7 @@ contract DAO {
         emit Propose(proposalCount, _amount, _recipient, msg.sender);
     }
 
-    function vote(uint256 _id) external onlyInvestor{
+    function vote(uint256 _id) external onlyInvestor {
         Proposal storage proposal = proposals[_id];
 
         require(!votes[msg.sender][_id], "already voted");
@@ -78,4 +77,21 @@ contract DAO {
         emit Vote(_id, msg.sender);
     }
 
+    function finalizeProposal(uint256 _id) external onlyInvestor {
+        //fetch proposal
+        Proposal storage proposal = proposals[_id];
+
+        //ensure it is not finalized
+        require(proposal.finalized == false, "proposal already finalized");
+
+        //finalize the proposal
+        proposal.finalized = true;
+
+        require(proposal.votes >= quorum, " must reach quorum to finalize proposal");
+
+       (bool sent, ) = proposal.recipient.call{value: proposal.amount}("");
+       require(sent);
+
+       emit Finalize(_id);
+    }
 }
