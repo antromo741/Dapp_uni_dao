@@ -16,12 +16,17 @@ contract DAO {
         address payable recipient;
         uint256 votes;
         bool finalized;
+        address[] voters;
+        bool failed;
     }
 
     uint256 public proposalCount;
     mapping(uint256 => Proposal) public proposals;
 
     mapping(address => mapping(uint256 => bool)) votes;
+
+    //refund mapping
+    mapping(uint256 => mapping(address => uint256)) public refunds;
 
     event Propose(uint id, uint256 amount, address recipient, address creator);
     event Vote(uint256 id, address investor);
@@ -51,61 +56,69 @@ contract DAO {
 
         proposalCount++;
 
-        proposals[proposalCount] = Proposal(
-            proposalCount,
-            _name,
-            _amount,
-            _recipient,
-            0,
-            false
-        );
+        // Initialize all fields including the voters array
+        proposals[proposalCount] = Proposal({
+            id: proposalCount,
+            name: _name,
+            amount: _amount,
+            recipient: _recipient,
+            votes: 0,
+            finalized: false,
+            voters: new address[](0), // Initialize the voters array here
+            failed: false
+        });
 
         emit Propose(proposalCount, _amount, _recipient, msg.sender);
     }
 
     // Vote on proposal
     function vote(uint256 _id) external onlyInvestor {
-        // Fetch proposal from mapping by id
         Proposal storage proposal = proposals[_id];
-
-        // Don't let investors vote twice
         require(!votes[msg.sender][_id], "already voted");
 
-        // update votes
-        proposal.votes += token.balanceOf(msg.sender);
+        uint256 voteWeight = token.balanceOf(msg.sender);
+        proposal.votes += voteWeight;
 
-        // Track that user has voted
+        // Store voter for refund purposes
+        proposal.voters.push(msg.sender);
+        refunds[_id][msg.sender] = voteWeight;
+
         votes[msg.sender][_id] = true;
-
-        // Emit an event
         emit Vote(_id, msg.sender);
     }
 
     // Finalize proposal & tranfer funds
     function finalizeProposal(uint256 _id) external onlyInvestor {
-        // Fetch proposal from mapping by id
         Proposal storage proposal = proposals[_id];
-
-        // Ensure proposal is not already finalized
-        require(proposal.finalized == false, "proposal already finalized");
-
-        // Mark proposal as finalized
-        proposal.finalized = true;
-
-        // Check that proposal has enough votes
+        require(!proposal.finalized, "proposal already finalized");
         require(
             proposal.votes >= quorum,
             "must reach quorum to finalize proposal"
         );
 
-        // Check that the contract has enough ether
-        require(address(this).balance >= proposal.amount);
+        if (address(this).balance >= proposal.amount) {
+            (bool sent, ) = proposal.recipient.call{value: proposal.amount}("");
+            if (!sent) {
+                proposal.failed = true;
+                return;
+            }
+        } else {
+            proposal.failed = true;
+            return;
+        }
 
-        // Transfer the funds to recipient
-        (bool sent, ) = proposal.recipient.call{value: proposal.amount}("");
-        require(sent);
-
-        // Emit event
+        proposal.finalized = true;
         emit Finalize(_id);
+    }
+
+    function claimRefund(uint256 _id) external {
+        Proposal storage proposal = proposals[_id];
+        require(proposal.failed, "Proposal did not fail");
+        uint256 owedAmount = refunds[_id][msg.sender];
+        require(owedAmount > 0, "No funds to claim or already claimed");
+
+        refunds[_id][msg.sender] = 0; // Reset refund
+        (bool sent, ) = msg.sender.call{value: owedAmount}("");
+        require(sent, "Failed to send refund");
     }
 }

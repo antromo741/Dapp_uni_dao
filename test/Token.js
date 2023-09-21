@@ -40,6 +40,8 @@ describe('Token', () => {
     })
 
     it('has correct total supply', async () => {
+      console.log(await token.totalSupply())
+      console.log(totalSupply)
       expect(await token.totalSupply()).to.equal(totalSupply)
     })
 

@@ -220,4 +220,63 @@ describe('DAO', () => {
     })
 
   })
+
+  describe('Refund Mechanism', () => {
+    let transaction, result, initialBalance
+
+    beforeEach(async () => {
+      // Step 1: Create a proposal
+      transaction = await dao.connect(investor1).createProposal('Proposal for Refund', ether(200), recipient.address);
+      result = await transaction.wait();
+
+      // Step 2: Have investors vote on the proposal
+      await dao.connect(investor1).vote(1);
+      await dao.connect(investor2).vote(1);
+    })
+
+    it('Allows investor to claim refund after failed proposal', async () => {
+      // Reduce DAO's ether to ensure the proposal will fail.
+      await dao.connect(funder).sendTransaction({ value: -ether(50) })
+
+      // Step 3: Finalize the proposal (this should fail due to lack of funds in DAO)
+      await dao.connect(investor1).finalizeProposal(1)
+
+      const proposal = await dao.proposals(1)
+      expect(proposal.failed).to.equal(true)
+
+      // Step 4: Check investor's balance before claiming refund
+      initialBalance = await ethers.provider.getBalance(investor1.address);
+
+      // Step 5: Claim refund
+      transaction = await dao.connect(investor1).claimRefund(1);
+      await transaction.wait();
+
+      // The investor's balance after the refund should be higher due to the refund, ignoring gas costs
+      expect(await ethers.provider.getBalance(investor1.address)).to.gt(initialBalance);
+
+      // Step 6: Ensure the refund mapping is updated
+      const refundAmount = await dao.refunds(1, investor1.address);
+      expect(refundAmount).to.equal(0);
+    });
+
+    it('Reverts if non-investor tries to claim a refund', async () => {
+      await dao.connect(investor1).finalizeProposal(1);
+      await expect(dao.connect(user).claimRefund(1)).to.be.revertedWith("No funds to claim or already claimed");
+    });
+
+    it('Reverts if investor tries to claim refund for a successful proposal', async () => {
+      await dao.connect(investor1).finalizeProposal(1);
+      const proposal = await dao.proposals(1);
+      if (!proposal.failed) {
+        await expect(dao.connect(investor1).claimRefund(1)).to.be.revertedWith("Proposal did not fail");
+      }
+    });
+
+    it('Reverts if investor tries to double claim', async () => {
+      await dao.connect(investor1).finalizeProposal(1);
+      await dao.connect(investor1).claimRefund(1);
+      await expect(dao.connect(investor1).claimRefund(1)).to.be.revertedWith("No funds to claim or already claimed");
+    });
+  });
+
 })
