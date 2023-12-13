@@ -46,6 +46,13 @@ contract DAO {
         _;
     }
 
+    function getHasVoted(
+        address _voter,
+        uint256 _proposalId
+    ) public view returns (bool) {
+        return votes[_voter][_proposalId];
+    }
+
     // Create proposal
     function createProposal(
         string memory _name,
